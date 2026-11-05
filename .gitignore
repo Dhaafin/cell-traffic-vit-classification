@@ -1,0 +1,60 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Cextensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# PyTorch checkpoints (exclude custom scratch checkpoints, keep checkpoints/best_training_tuned_vit.pth)
+*.pt
+*.ckpt
+!checkpoints/best_training_tuned_vit.pth
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE & OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Office temporary files
+~$*.xlsx
+~$*.pptx
+~$*.docx
+
+# Dataset and Academic Documents
+data/
+docs/
+*.xlsx
+*.pptx
+*.docx
