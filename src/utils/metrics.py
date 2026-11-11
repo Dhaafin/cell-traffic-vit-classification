@@ -156,7 +156,9 @@ def build_single_json_report(
     cv_dist: Dict[str, Any],
     overall_metrics: Dict[str, Any],
     efficiency_profile: Dict[str, Any],
-    total_time_sec: float
+    total_time_sec: float,
+    cv_mode: str = "stratified",
+    group_count: Optional[int] = None
 ) -> Dict[str, Any]:
     """
     Consolidates ALL experimental findings into a single, comprehensive dictionary.
@@ -166,8 +168,15 @@ def build_single_json_report(
     prec_m, prec_s = cv_dist["macro_precision_mean"], cv_dist["macro_precision_std"]
     rec_m, rec_s = cv_dist["macro_recall_mean"], cv_dist["macro_recall_std"]
 
+    cv_mode_desc = (
+        f"Stratified GroupKFold ({group_count} eNodeB Sectors / Site-Independent)"
+        if cv_mode in ["group", "group_kfold"]
+        else "Stratified K-Fold (Sample-Independent)"
+    )
+
     summary_card = {
         "model_architecture": model_name,
+        "cross_validation_mode": cv_mode_desc,
         "5fold_cv_accuracy": f"{acc_m:.2f}% ± {acc_s:.2f}%",
         "5fold_cv_macro_f1": f"{f1_m:.2f}% ± {f1_s:.2f}%",
         "5fold_cv_macro_precision": f"{prec_m:.2f}% ± {prec_s:.2f}%",
@@ -184,6 +193,10 @@ def build_single_json_report(
         "peak_vram_mb": f"{efficiency_profile.get('peak_vram_mb', 0.0)} MB",
         "total_experiment_time": f"{total_time_sec:.1f} s",
     }
+
+    cv_dist["cv_mode"] = cv_mode_desc
+    if group_count is not None:
+        cv_dist["unique_groups"] = group_count
 
     return {
         "model_name": model_name,
