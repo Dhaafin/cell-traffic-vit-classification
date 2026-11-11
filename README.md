@@ -139,11 +139,38 @@ DayViT-Cellular-Traffic/
 ├── src/                                # Core Neural Modules
 │   ├── __init__.py
 │   ├── dataset.py                      # Data loader, zero-leakage hourly imputation
-│   └── models.py                       # DayViT architecture (Day-Tokenized Transformer)
+│   ├── transforms.py                   # Multi-View 224x224 RGB & Z-score pipelines
+│   │
+│   ├── models/                         # Architecture Zoo
+│   │   ├── __init__.py
+│   │   ├── day_vit.py                  # DayViT architecture (Day-Tokenized Compact Transformer)
+│   │   ├── vit_tiny.py                 # ViT-Tiny (Pretrained LP-FT & From-Scratch)
+│   │   └── factory.py                  # Unified model factory and parameter counters
+│   │
+│   ├── engine/                         # Training & Evaluation Loops
+│   │   ├── __init__.py
+│   │   ├── trainer_standard.py         # Standard end-to-end training loop
+│   │   ├── trainer_lpft.py             # Two-stage LP-FT fine-tuning loop
+│   │   └── evaluator.py                # Validation and metric extraction loop
+│   │
+│   └── utils/                          # Common Utilities
+│       ├── __init__.py
+│       ├── seed.py                     # Multi-seed reproducibility manager
+│       ├── metrics.py                  # Classification reports and metric calculators
+│       └── plots.py                    # Publication-grade confusion matrices and boxplots
 │
 ├── experiments/                        # Reproducible Training & Evaluation
-│   ├── tune_training.py                # Hyperparameter tuning runner
-│   └── evaluate_cv.py                  # Stratified 5-Fold cross-validation pipeline
+│   ├── evaluate_cv_dayvit.py           # 5-Fold CV for DayViT
+│   ├── evaluate_cv_vit_tiny_pretrained.py # 5-Fold CV for ViT-Tiny (Pretrained ImageNet + LP-FT)
+│   ├── evaluate_cv_vit_tiny_scratch.py # 5-Fold CV for ViT-Tiny (From-Scratch Random Init)
+│   ├── run_benchmark.py                # Unified CLI runner and leaderboard generator
+│   └── tune_training.py                # Hyperparameter tuning runner
+│
+├── outputs/                            # Generated evaluation metrics & plots (git-ignored)
+│   ├── dayvit/
+│   ├── vit_tiny_pretrained/
+│   ├── vit_tiny_scratch/
+│   └── leaderboard/
 │
 ├── checkpoints/                        # Model Checkpoints
 │   └── best_training_tuned_vit.pth     # Lightweight trained DayViT weights (252 KB)
