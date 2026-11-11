@@ -1,25 +1,30 @@
 """
-Stratified 5-Fold Cross Validation Pipeline for DayViT (Native 7x24 Compact Transformer).
-Consolidates all metrics into a single comprehensive JSON report: outputs/dayvit/benchmark_results.json
+Stratified & Group Cross Validation Pipeline for DayViT (Native 7x24 Compact Transformer).
+Supports:
+  --cv_mode stratified (Default: Sample-independent temporal split)
+  --cv_mode group      (Site-independent 19 eNodeB spatial split)
+Consolidates all metrics into: outputs/<cv_mode>/dayvit/benchmark_results.json
+
 Usage:
-    python experiments/evaluate_cv_dayvit.py
+    python experiments/evaluate_cv_dayvit.py --cv_mode stratified
+    python experiments/evaluate_cv_dayvit.py --cv_mode group
 """
 import sys
 import time
+import argparse
 from pathlib import Path
 import json
 import numpy as np
 import pandas as pd
 import torch
 from torch.utils.data import DataLoader
-from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import precision_score, recall_score
 
 # Ensure repo root is on sys.path
 ROOT_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT_DIR))
 
-from src.dataset import load_raw_traffic_matrices, TrafficDataset, INV_LABEL_MAP
+from src.dataset import load_raw_traffic_matrices, extract_cell_groups, TrafficDataset, INV_LABEL_MAP
 from src.models import build_model, count_parameters
 from src.transforms import ZScore7x24Transform
 from src.engine import train_standard
@@ -30,11 +35,10 @@ from src.utils import (
     build_single_json_report,
     format_cv_summary_table,
     plot_confusion_matrix,
-    profile_model_efficiency
+    profile_model_efficiency,
+    get_cv_splitter,
+    format_cv_mode_name
 )
-
-OUTPUT_DIR = ROOT_DIR / "outputs" / "dayvit"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def run_cv_dayvit(
@@ -43,16 +47,27 @@ def run_cv_dayvit(
     lr: float = 5e-4,
     weight_decay: float = 1e-2,
     seed_base: int = 42,
+    cv_mode: str = "stratified",
     verbose: bool = True
 ):
+    cv_folder = "group" if cv_mode in ["group", "group_kfold"] else "stratified"
+    output_dir = ROOT_DIR / "outputs" / cv_folder / "dayvit"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print("=" * 70)
-    print("      Stratified 5-Fold Cross Validation: DayViT (Native 7x24)   ")
-    print("=" * 70)
+    mode_title = format_cv_mode_name(cv_mode)
+    print("=" * 75)
+    print(f"      Cross Validation: DayViT (Native 7x24)")
+    print(f"      Mode: {mode_title}")
+    print("=" * 75)
     print(f"Device: {device}")
 
-    X_raw, y_raw, _ = load_raw_traffic_matrices()
-    skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=seed_base)
+    X_raw, y_raw, id_list = load_raw_traffic_matrices()
+    groups = extract_cell_groups(id_list) if cv_mode in ["group", "group_kfold"] else None
+    unique_groups = len(set(groups)) if groups is not None else None
+
+    splitter = get_cv_splitter(cv_mode=cv_mode, n_splits=5, seed=seed_base)
+    split_iter = splitter.split(X_raw, y_raw, groups=groups) if groups is not None else splitter.split(X_raw, y_raw)
 
     fold_metrics = []
     oof_predictions = np.zeros(len(y_raw), dtype=np.int64)
@@ -60,9 +75,10 @@ def run_cv_dayvit(
 
     sample_model = None
     t_start = time.time()
-    for fold, (train_idx, val_idx) in enumerate(skf.split(X_raw, y_raw), 1):
+    for fold, (train_idx, val_idx) in enumerate(split_iter, 1):
         set_seed(seed_base + fold)
-        print(f"\n--- [DayViT] Running Fold {fold}/5 ---")
+        val_info = f", Val Groups: {len(set(np.array(groups)[val_idx]))}" if groups is not None else ""
+        print(f"\n--- [DayViT | {cv_folder.upper()}] Running Fold {fold}/5 (Train: {len(train_idx)}, Val: {len(val_idx)}{val_info}) ---")
 
         X_train_raw, X_val_raw = X_raw[train_idx], X_raw[val_idx]
         y_train, y_val = y_raw[train_idx], y_raw[val_idx]
@@ -130,32 +146,46 @@ def run_cv_dayvit(
         cv_dist=cv_dist,
         overall_metrics=overall_metrics,
         efficiency_profile=efficiency_profile,
-        total_time_sec=total_time
+        total_time_sec=total_time,
+        cv_mode=cv_mode,
+        group_count=unique_groups
     )
 
     # 4. Save to SINGLE JSON file
-    out_json_path = OUTPUT_DIR / "benchmark_results.json"
+    out_json_path = output_dir / "benchmark_results.json"
     with open(out_json_path, "w", encoding="utf-8") as f:
         json.dump(single_json_report, f, indent=2)
 
     # 5. Confusion matrix plot
     plot_confusion_matrix(
         overall_metrics["confusion_matrix"],
-        OUTPUT_DIR / "confusion_matrix_oof_dayvit.png",
-        title="DayViT OOF Confusion Matrix (5-Fold CV)"
+        output_dir / "confusion_matrix_oof_dayvit.png",
+        title=f"DayViT OOF Confusion Matrix ({cv_folder.capitalize()} 5-Fold CV)"
     )
 
     # 6. Display executive summary card
-    print("\n" + "=" * 65)
-    print("        ALL-IN-ONE BENCHMARK RESULTS: DayViT (Ours)")
-    print("=" * 65)
+    print("\n" + "=" * 70)
+    print(f"  ALL-IN-ONE BENCHMARK: DayViT [{cv_folder.upper()}]")
+    print("=" * 70)
     for k, v in single_json_report["summary_card"].items():
         print(f"  {k:30s}: {v}")
-    print("=" * 65)
+    print("=" * 70)
     print(f"Single JSON Report saved to: {out_json_path}")
 
     return single_json_report
 
 
 if __name__ == "__main__":
-    run_cv_dayvit()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--cv_mode", type=str, default="stratified", choices=["stratified", "group"])
+    parser.add_argument("--epochs", type=int, default=70)
+    parser.add_argument("--batch_size", type=int, default=32)
+    parser.add_argument("--seed", type=int, default=42)
+    args = parser.parse_args()
+
+    run_cv_dayvit(
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+        seed_base=args.seed,
+        cv_mode=args.cv_mode
+    )
