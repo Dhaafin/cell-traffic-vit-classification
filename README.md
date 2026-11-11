@@ -1,203 +1,44 @@
-# DayViT: Day-Tokenized Vision Transformer for Spatio-Temporal Cellular Traffic Classification
+# Command List Eksekusi Proyek
 
-[![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg?logo=python&logoColor=white)](https://www.python.org/)
-[![PyTorch](https://img.shields.io/badge/PyTorch-2.0%2B-EE4C2C.svg?logo=pytorch&logoColor=white)](https://pytorch.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Task](https://img.shields.io/badge/Task-Cellular%20Traffic%20Classification-orange.svg)]()
-[![Model Size](https://img.shields.io/badge/Model%20Size-58.8K%20Params-brightgreen.svg)]()
-
-> **Official Implementation** of the paper:  
-> _"Performance Evaluation and Architectural Comparison of Vision Transformers for Spatio-Temporal Cellular Traffic Classification"_  
-> **Author:** Dhaafin Makhalingga Ridhwan  
-> **Affiliation:** Graduate Program in Telecommunications & Informatics Engineering
-
----
-
-## 📌 Overview & Motivation
-
-Cellular network traffic characterization is critical for autonomous network slicing, dynamic radio resource allocation, and energy-saving orchestration. In this work, sequential 168-hour telemetry data (1 week) is structured into a **$7 \times 24$ Spatio-Temporal Matrix** $\mathbf{X} \in \mathbb{R}^{7 \times 24}$, where:
-
-- **Rows ($d \in \{1, \dots, 7\}$):** Represent chronological days (Monday through Sunday).
-- **Columns ($t \in \{0, \dots, 23\}$):** Represent diurnal hours (00:00 to 23:00).
-- **Elements ($x_{d,t}$):** Represent aggregated radio access throughput (Mbps).
-
-The dataset comprises **$N = 1,140$ balanced samples** (285 per class) across four physical cellular traffic regimes:
-
-1. **UU (User Uplink):** Low magnitude, bursty subscriber uplink transmissions (messaging, sensor telemetry).
-2. **UD (User Downlink):** Media-rich downlink traffic (streaming, downloads) strongly aligned with human diurnal hours.
-3. **CU (Cell Uplink):** Multiplexed sector-level base station uplink throughput bounded by channel capacity.
-4. **CD (Cell Downlink):** Massive sector-level cell capacity characterized by intense evening busy-hour peaks.
-
----
-
-## 🏗️ Architectural Paradigms: DayViT vs. ViT-Tiny
-
-We compare two architectural philosophies for spatio-temporal matrix learning:
-
-### 1. DayViT: Day-Tokenized Compact Vision Transformer (Ours)
-
-Traditional Vision Transformers require resizing and square patch partitioning ($16 \times 16$), which destroys the asymmetric diurnal geometry of $7 \times 24$ matrices. **DayViT** eliminates spatial interpolation by introducing **Day-as-Token Tokenization**:
-
-- Each daily diurnal vector ($\mathbf{x}_d \in \mathbb{R}^{24}$) is directly projected into an embedding vector ($\mathbf{e}_d \in \mathbb{R}^{48}$).
-- A learnable `[CLS]` token and 1D positional embeddings are added (8 tokens total).
-- Processed via 3 Pre-LN Transformer Encoder blocks ($H=4$ heads, GELU activation, MLP ratio 2.0).
-- **Total parameters: 58,804 (~58.8K)** — an ultra-lightweight footprint suitable for edge base-station deployment.
-
-### 2. Pretrained ViT-Tiny (Multi-View RGB Transfer Learning)
-
-Pretrained on ImageNet-1k, standard **ViT-Tiny** (`5,525,188 parameters`) requires a $224 \times 224 \times 3$ tensor. We synthesize a **Multi-View 3-Channel RGB** representation:
-
-- **Red Channel:** Global Z-Score normalization (preserves absolute capacity).
-- **Green Channel:** Logarithmic compression (resolves low-throughput uplink bursts).
-- **Blue Channel:** Row-wise Min-Max scaling (captures diurnal intra-day shapes).
-- Evaluated via a **Linear Probing & Fine-Tuning (LP-FT)** protocol.
-
----
-
-## 📊 Comprehensive Benchmark Results
-
-| Model Architecture         |        Input Resolution         |  Parameter Count   | GPU Memory | Inference Latency | Held-Out Test Acc |   Stratified 5-Fold CV Acc    |
-| :------------------------- | :-----------------------------: | :----------------: | :--------: | :---------------: | :---------------: | :---------------------------: |
-| **Random Forest Baseline** |      9 Engineered Features      |         —          |     —      |     ~0.10 ms      |      88.16%       |     $84.47\% \pm 1.85\%$      |
-| **ViT-Tiny (LP-FT)**       |    $224 \times 224 \times 3$    |  5,525,188 (5.5M)  |  22.1 MB   |      8.42 ms      |      88.60%       | $\mathbf{88.60\% \pm 1.48\%}$ |
-| **DayViT (Ours)** 🏆       | $\mathbf{7 \times 24 \times 1}$ | **58,804 (58.8K)** | **1.2 MB** |    **0.45 ms**    |    **91.23%**     |     $85.09\% \pm 1.83\%$      |
-
-> [!NOTE]
-> **Key Finding:** DayViT achieves competitive and superior peak accuracy (**91.23%**) while reducing parameter count by **98.9%** (58.8K vs 5.5M) and inference latency by **18.7×** compared to ViT-Tiny.
-
----
-
-## ⚡ Quickstart & Installation
-
-### 1. Clone & Setup Environment
-
+## 1. Setup Lingkungan
 ```bash
-git clone https://github.com/<your-username>/DayViT-Cellular-Traffic.git
-cd DayViT-Cellular-Traffic
-
-# Install dependencies
 pip install -r requirements.txt
 ```
 
-### 2. Verify with Quick Inference Demo
-
-Test the trained checkpoint immediately on the test set:
-
+## 2. Quick Demo Inference
 ```bash
 python demo_inference.py
 ```
 
-_Expected Output:_
-
-```text
-==================================================
-   DayViT: Cellular Traffic Inference Demo
-==================================================
-Device: cuda
-Total Model Parameters: 58,804
-Successfully loaded checkpoint: best_training_tuned_vit.pth
-
-Held-out Test Accuracy: 91.23%
-Classification Report:
-              precision    recall  f1-score   support
-          UU     0.9111    0.7193    0.8039        57
-          UD     1.0000    1.0000    1.0000        57
-          CU     0.7681    0.9298    0.8413        57
-          CD     1.0000    1.0000    1.0000        57
-```
-
-### 3. Run Hyperparameter Training Tuning
-
+## 3. Benchmark Keseluruhan (All Models)
 ```bash
-python experiments/tune_training.py
+# Validasi Temporal (Stratified 5-Fold)
+python experiments/run_benchmark.py --model all --cv_mode stratified
+
+# Validasi Spasial 19 Sektor eNodeB (Stratified Group 5-Fold)
+python experiments/run_benchmark.py --model all --cv_mode group
 ```
 
-### 4. Run Stratified 5-Fold Cross Validation
-
+## 4. Evaluasi Model Individual - Validasi Temporal (Stratified)
 ```bash
-python experiments/evaluate_cv.py
+# DayViT (Ours)
+python experiments/evaluate_cv_dayvit.py --cv_mode stratified
+
+# ViT-Tiny Pretrained (LP-FT ImageNet-1k)
+python experiments/evaluate_cv_vit_tiny_pretrained.py --cv_mode stratified
+
+# ViT-Tiny From-Scratch (Random Initialization)
+python experiments/evaluate_cv_vit_tiny_scratch.py --cv_mode stratified
 ```
 
----
+## 5. Evaluasi Model Individual - Validasi Spasial (Group K-Fold)
+```bash
+# DayViT (Ours)
+python experiments/evaluate_cv_dayvit.py --cv_mode group
 
-## 📂 Repository Structure
+# ViT-Tiny Pretrained (LP-FT ImageNet-1k)
+python experiments/evaluate_cv_vit_tiny_pretrained.py --cv_mode group
 
-```text
-DayViT-Cellular-Traffic/
-├── .gitignore                          # Clean git ignore configuration
-├── LICENSE                             # MIT Open Source License
-├── requirements.txt                    # Python environment specifications
-├── README.md                           # Project documentation & benchmark overview
-├── demo_inference.py                   # One-click evaluation script on pre-trained checkpoint
-│
-├── data/                               # 4 Raw Cellular Traffic Excel Matrices
-│   ├── Matrix_CD_Cell_DL.xlsx          # Cell Downlink throughput samples
-│   ├── Matrix_CU_Cell_UL.xlsx          # Cell Uplink throughput samples
-│   ├── Matrix_UD_User_DL.xlsx          # User Downlink throughput samples
-│   └── Matrix_UU_User_UL.xlsx          # User Uplink throughput samples
-│
-├── src/                                # Core Neural Modules
-│   ├── __init__.py
-│   ├── dataset.py                      # Data loader, zero-leakage hourly imputation
-│   ├── transforms.py                   # Multi-View 224x224 RGB & Z-score pipelines
-│   │
-│   ├── models/                         # Architecture Zoo
-│   │   ├── __init__.py
-│   │   ├── day_vit.py                  # DayViT architecture (Day-Tokenized Compact Transformer)
-│   │   ├── vit_tiny.py                 # ViT-Tiny (Pretrained LP-FT & From-Scratch)
-│   │   └── factory.py                  # Unified model factory and parameter counters
-│   │
-│   ├── engine/                         # Training & Evaluation Loops
-│   │   ├── __init__.py
-│   │   ├── trainer_standard.py         # Standard end-to-end training loop
-│   │   ├── trainer_lpft.py             # Two-stage LP-FT fine-tuning loop
-│   │   └── evaluator.py                # Validation and metric extraction loop
-│   │
-│   └── utils/                          # Common Utilities
-│       ├── __init__.py
-│       ├── seed.py                     # Multi-seed reproducibility manager
-│       ├── metrics.py                  # Classification reports and metric calculators
-│       └── plots.py                    # Publication-grade confusion matrices and boxplots
-│
-├── experiments/                        # Reproducible Training & Evaluation
-│   ├── evaluate_cv_dayvit.py           # 5-Fold CV for DayViT
-│   ├── evaluate_cv_vit_tiny_pretrained.py # 5-Fold CV for ViT-Tiny (Pretrained ImageNet + LP-FT)
-│   ├── evaluate_cv_vit_tiny_scratch.py # 5-Fold CV for ViT-Tiny (From-Scratch Random Init)
-│   ├── run_benchmark.py                # Unified CLI runner and leaderboard generator
-│   └── tune_training.py                # Hyperparameter tuning runner
-│
-├── outputs/                            # Generated evaluation metrics & plots (git-ignored)
-│   ├── dayvit/
-│   ├── vit_tiny_pretrained/
-│   ├── vit_tiny_scratch/
-│   └── leaderboard/
-│
-├── checkpoints/                        # Model Checkpoints
-│   └── best_training_tuned_vit.pth     # Lightweight trained DayViT weights (252 KB)
-│
-├── docs/                               # Academic Publications & Reports
-│   ├── Paper_IEEE_DayViT_Traffic_Classification.md
-│   ├── Laporan_Eksperimen_ViT_Trafik_Seluler.md
-│   └── Presentasi_Final_ViT_Task8.pptx
+# ViT-Tiny From-Scratch (Random Initialization)
+python experiments/evaluate_cv_vit_tiny_scratch.py --cv_mode group
 ```
-
----
-
-## 📜 Citation
-
-If you use DayViT or this dataset in your research, please cite:
-
-```bibtex
-@article{ridhwan2026dayvit,
-  title={Performance Evaluation and Architectural Comparison of Vision Transformers for Spatio-Temporal Cellular Traffic Classification},
-  author={Ridhwan, Dhaafin Makhalingga},
-  journal={Graduate Program in Telematics & Telecommunications Engineering},
-  year={2026}
-}
-```
-
----
-
-## 📄 License
-
-This repository is licensed under the [MIT License](LICENSE).
