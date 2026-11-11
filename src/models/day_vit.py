@@ -4,7 +4,7 @@ Custom designed for native 7x24 spatio-temporal cellular throughput matrices.
 
 Key Features:
 - Day-as-Token Tokenization: Projects each 24-hour diurnal profile directly to an embedding vector.
-- Ultra-compact parameter footprint (~56.4K - 58.8K trainable parameters).
+- Ultra-compact parameter footprint (~58.8K trainable parameters).
 - Pre-LayerNorm (norm_first=True) for stable and rapid gradient convergence.
 - Multi-Head Self-Attention capturing inter-day temporal dependencies.
 """
@@ -97,17 +97,3 @@ class DayViT(nn.Module):
 
 # Alias for backwards compatibility
 CustomTrafficViT = DayViT
-
-
-def count_parameters(model: nn.Module) -> int:
-    """Returns the total number of trainable parameters in a PyTorch model."""
-    return sum(p.numel() for p in model.parameters() if p.requires_grad)
-
-
-if __name__ == "__main__":
-    model = DayViT()
-    dummy_input = torch.randn(16, 7, 24)
-    output = model(dummy_input)
-    print(f"Model: DayViT instantiated successfully.")
-    print(f"Input Shape: {dummy_input.shape} -> Output Logits: {output.shape}")
-    print(f"Trainable Parameters: {count_parameters(model):,}")
