@@ -12,6 +12,7 @@ from .metrics import (
 )
 from .plots import plot_confusion_matrix, plot_cv_boxplot, plot_leaderboard
 from .profiler import profile_model_efficiency, format_flops
+from .cv_factory import get_cv_splitter, format_cv_mode_name
 
 __all__ = [
     "set_seed",
@@ -26,4 +27,6 @@ __all__ = [
     "plot_leaderboard",
     "profile_model_efficiency",
     "format_flops",
+    "get_cv_splitter",
+    "format_cv_mode_name",
 ]
