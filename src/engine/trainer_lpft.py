@@ -1,8 +1,5 @@
 """
 Two-Stage LP-FT Engine (Linear Probing then Fine-Tuning) for Pretrained ViT-Tiny.
-Follows the protocol of Kumar et al. (ICLR 2022):
-- Phase 1 (Linear Probing): Freeze 100% backbone, train only classification head.
-- Phase 2 (Partial Fine-Tuning): Unfreeze top N encoder blocks with differential learning rate.
 """
 from typing import Dict, Any, Tuple, Optional
 import time
@@ -27,9 +24,16 @@ def train_lpft(
     label_smoothing: float = 0.05,
     max_grad_norm: float = 1.0,
     verbose: bool = False,
-) -> Tuple[nn.Module, float, float, np.ndarray, Dict[str, Any]]:
+) -> Tuple[nn.Module, float, float, np.ndarray, np.ndarray, Dict[str, Any]]:
     """
     Executes the two-stage LP-FT pipeline.
+    Returns:
+      - model: trained model
+      - best_val_acc: float
+      - best_val_f1: float
+      - best_val_preds: np.ndarray
+      - best_val_probs: np.ndarray (softmax probabilities)
+      - history: Dict of phase metrics
     """
     model = model.to(device)
     criterion = nn.CrossEntropyLoss(label_smoothing=label_smoothing)
@@ -37,12 +41,11 @@ def train_lpft(
     best_val_acc = 0.0
     best_val_f1 = 0.0
     best_val_preds = np.array([])
+    best_val_probs = np.array([])
     history = {"phase1": [], "phase2": []}
     t0 = time.time()
 
-    # ==============================================================
     # PHASE 1: LINEAR PROBING
-    # ==============================================================
     if hasattr(model, "set_trainable_mode"):
         model.set_trainable_mode("linear_probe")
     else:
@@ -74,24 +77,22 @@ def train_lpft(
             train_loss += loss.item() * inputs.size(0)
             n_train += inputs.size(0)
 
-        val_loss, val_acc, val_f1, val_preds, _ = evaluate_model(model, val_loader, criterion, device)
+        val_loss, val_acc, val_f1, val_preds, _, val_probs = evaluate_model(model, val_loader, criterion, device)
         history["phase1"].append({"epoch": epoch, "train_loss": train_loss / max(n_train, 1), "val_acc": val_acc})
 
         if val_acc > best_val_acc:
             best_val_acc = val_acc
             best_val_f1 = val_f1
             best_val_preds = val_preds.copy()
+            best_val_probs = val_probs.copy()
 
         if verbose:
             print(f"[LP Epoch {epoch}/{lp_epochs}] Val Acc: {val_acc*100:.2f}% | Val F1: {val_f1*100:.2f}%")
 
-    # ==============================================================
-    # PHASE 2: PARTIAL FINE-TUNING (DIFFERENTIAL LR)
-    # ==============================================================
+    # PHASE 2: PARTIAL FINE-TUNING
     if hasattr(model, "set_trainable_mode"):
         model.set_trainable_mode("partial_finetune", unfreeze_last_n=unfreeze_last_n)
     else:
-        # Fallback for raw HF model
         for p in model.parameters():
             p.requires_grad = False
         for p in model.classifier.parameters():
@@ -129,16 +130,17 @@ def train_lpft(
             n_train += inputs.size(0)
 
         sched_ft.step()
-        val_loss, val_acc, val_f1, val_preds, _ = evaluate_model(model, val_loader, criterion, device)
+        val_loss, val_acc, val_f1, val_preds, _, val_probs = evaluate_model(model, val_loader, criterion, device)
         history["phase2"].append({"epoch": epoch, "train_loss": train_loss / max(n_train, 1), "val_acc": val_acc})
 
         if val_acc > best_val_acc:
             best_val_acc = val_acc
             best_val_f1 = val_f1
             best_val_preds = val_preds.copy()
+            best_val_probs = val_probs.copy()
 
         if verbose:
             print(f"[FT Epoch {epoch}/{ft_epochs}] Val Acc: {val_acc*100:.2f}% | Val F1: {val_f1*100:.2f}%")
 
     history["elapsed_sec"] = time.time() - t0
-    return model, best_val_acc, best_val_f1, best_val_preds, history
+    return model, best_val_acc, best_val_f1, best_val_preds, best_val_probs, history

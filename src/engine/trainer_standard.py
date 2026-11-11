@@ -21,14 +21,15 @@ def train_standard(
     label_smoothing: float = 0.05,
     max_grad_norm: float = 1.0,
     verbose: bool = False,
-) -> Tuple[nn.Module, float, float, np.ndarray, Dict[str, Any]]:
+) -> Tuple[nn.Module, float, float, np.ndarray, np.ndarray, Dict[str, Any]]:
     """
     Standard single-stage end-to-end training with AdamW and Cosine Annealing.
     Returns:
       - model: trained model
       - best_val_acc: float
       - best_val_f1: float
-      - best_val_preds: np.ndarray
+      - best_val_preds: np.ndarray (discrete labels)
+      - best_val_probs: np.ndarray (softmax probabilities)
       - history: Dict of loss and acc per epoch
     """
     model = model.to(device)
@@ -39,6 +40,7 @@ def train_standard(
     best_val_acc = 0.0
     best_val_f1 = 0.0
     best_val_preds = np.array([])
+    best_val_probs = np.array([])
     history = {"train_loss": [], "val_loss": [], "val_acc": [], "val_f1": []}
 
     t0 = time.time()
@@ -67,7 +69,7 @@ def train_standard(
         avg_train_loss = train_loss / max(n_train, 1)
 
         # Evaluate on validation set
-        val_loss, val_acc, val_f1, val_preds, _ = evaluate_model(model, val_loader, criterion, device)
+        val_loss, val_acc, val_f1, val_preds, _, val_probs = evaluate_model(model, val_loader, criterion, device)
 
         history["train_loss"].append(avg_train_loss)
         history["val_loss"].append(val_loss)
@@ -78,9 +80,10 @@ def train_standard(
             best_val_acc = val_acc
             best_val_f1 = val_f1
             best_val_preds = val_preds.copy()
+            best_val_probs = val_probs.copy()
 
         if verbose and (epoch % 10 == 0 or epoch == epochs):
             print(f"Epoch [{epoch:02d}/{epochs:02d}] Train Loss: {avg_train_loss:.4f} | Val Acc: {val_acc*100:.2f}% | Val F1: {val_f1*100:.2f}%")
 
     history["elapsed_sec"] = time.time() - t0
-    return model, best_val_acc, best_val_f1, best_val_preds, history
+    return model, best_val_acc, best_val_f1, best_val_preds, best_val_probs, history
