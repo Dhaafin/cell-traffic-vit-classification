@@ -78,9 +78,9 @@ class TrafficDataset(Dataset):
     """
     Native PyTorch Dataset for 7x24 spatio-temporal traffic matrices.
     """
-    def __init__(self, X: np.ndarray, y: np.ndarray, transform=None):
-        self.X = torch.tensor(X, dtype=torch.float32)
-        self.y = torch.tensor(y, dtype=torch.long)
+    def __init__(self, X, y, transform=None):
+        self.X = torch.as_tensor(X, dtype=torch.float32)
+        self.y = torch.as_tensor(y, dtype=torch.long)
         self.transform = transform
 
     def __len__(self) -> int:
@@ -96,15 +96,11 @@ class TrafficDataset(Dataset):
 
 class MultiViewViTDataset(Dataset):
     """
-    Multi-View 3-Channel RGB Dataset for Pretrained ViT-Tiny (224x224x3).
-    Synthesizes:
-      - Channel R: Global Z-Score normalization (preserves absolute capacity)
-      - Channel G: Logarithmic scaling (enhances low-throughput uplink bursts)
-      - Channel B: Daily Min-Max normalization (captures relative diurnal pattern)
+    Multi-View 3-Channel RGB Dataset for ViT-Tiny (224x224x3).
     """
-    def __init__(self, X_tensors: torch.Tensor, y_labels: torch.Tensor):
-        self.X = X_tensors
-        self.y = y_labels
+    def __init__(self, X_tensors, y_labels):
+        self.X = torch.as_tensor(X_tensors, dtype=torch.float32)
+        self.y = torch.as_tensor(y_labels, dtype=torch.long)
 
     def __len__(self) -> int:
         return len(self.y)
