@@ -4,6 +4,7 @@ DayViT: Day-Tokenized Compact Vision Transformer for Spatio-Temporal Cellular Tr
 
 from .dataset import (
     load_raw_traffic_matrices,
+    extract_cell_groups,
     get_train_test_loaders,
     TrafficDataset,
     MultiViewViTDataset,
@@ -15,6 +16,7 @@ from .models import DayViT, count_parameters
 
 __all__ = [
     "load_raw_traffic_matrices",
+    "extract_cell_groups",
     "get_train_test_loaders",
     "TrafficDataset",
     "MultiViewViTDataset",

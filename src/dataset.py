@@ -74,6 +74,15 @@ def load_raw_traffic_matrices(data_dir: Optional[Path] = None) -> Tuple[np.ndarr
     return X, y, id_list
 
 
+def extract_cell_groups(id_list: List[str]) -> List[str]:
+    """
+    Extracts the eNodeB sector prefix (e.g. 'L18_11' from 'L18_11_1').
+    Returns a list of 1,140 group identifiers across 19 unique base station sectors,
+    enabling strictly isolated GroupKFold spatial cross-validation.
+    """
+    return [sample_id.rsplit('_', 1)[0] if '_' in str(sample_id) else str(sample_id) for sample_id in id_list]
+
+
 class TrafficDataset(Dataset):
     """
     Native PyTorch Dataset for 7x24 spatio-temporal traffic matrices.
