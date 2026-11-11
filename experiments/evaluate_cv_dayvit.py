@@ -1,5 +1,6 @@
 """
 Stratified 5-Fold Cross Validation Pipeline for DayViT (Native 7x24 Compact Transformer).
+Consolidates all metrics into a single comprehensive JSON report: outputs/dayvit/benchmark_results.json
 Usage:
     python experiments/evaluate_cv_dayvit.py
 """
@@ -12,6 +13,7 @@ import pandas as pd
 import torch
 from torch.utils.data import DataLoader
 from sklearn.model_selection import StratifiedKFold
+from sklearn.metrics import precision_score, recall_score
 
 # Ensure repo root is on sys.path
 ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -21,7 +23,15 @@ from src.dataset import load_raw_traffic_matrices, TrafficDataset, INV_LABEL_MAP
 from src.models import build_model, count_parameters
 from src.transforms import ZScore7x24Transform
 from src.engine import train_standard
-from src.utils import set_seed, compute_metrics, format_cv_summary_table, plot_confusion_matrix, plot_cv_boxplot
+from src.utils import (
+    set_seed,
+    compute_comprehensive_metrics,
+    compute_cross_validation_distribution,
+    build_single_json_report,
+    format_cv_summary_table,
+    plot_confusion_matrix,
+    profile_model_efficiency
+)
 
 OUTPUT_DIR = ROOT_DIR / "outputs" / "dayvit"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -36,9 +46,9 @@ def run_cv_dayvit(
     verbose: bool = True
 ):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print("=" * 65)
+    print("=" * 70)
     print("      Stratified 5-Fold Cross Validation: DayViT (Native 7x24)   ")
-    print("=" * 65)
+    print("=" * 70)
     print(f"Device: {device}")
 
     X_raw, y_raw, _ = load_raw_traffic_matrices()
@@ -46,7 +56,9 @@ def run_cv_dayvit(
 
     fold_metrics = []
     oof_predictions = np.zeros(len(y_raw), dtype=np.int64)
+    oof_probabilities = np.zeros((len(y_raw), 4), dtype=np.float32)
 
+    sample_model = None
     t_start = time.time()
     for fold, (train_idx, val_idx) in enumerate(skf.split(X_raw, y_raw), 1):
         set_seed(seed_base + fold)
@@ -68,9 +80,10 @@ def run_cv_dayvit(
 
         model = build_model("dayvit", num_classes=4, embed_dim=48, num_heads=4, num_layers=3)
         if fold == 1:
+            sample_model = model
             print(f"Model Parameters: {count_parameters(model):,}")
 
-        _, best_acc, best_f1, best_preds, hist = train_standard(
+        _, best_acc, best_f1, best_preds, best_probs, hist = train_standard(
             model=model,
             train_loader=train_loader,
             val_loader=val_loader,
@@ -82,53 +95,66 @@ def run_cv_dayvit(
         )
 
         oof_predictions[val_idx] = best_preds
+        oof_probabilities[val_idx] = best_probs
+
+        prec = float(precision_score(y_val, best_preds, average="macro", zero_division=0))
+        rec = float(recall_score(y_val, best_preds, average="macro", zero_division=0))
+
         fold_metrics.append({
             "fold": fold,
-            "accuracy": best_acc,
-            "macro_f1": best_f1,
-            "elapsed_sec": hist["elapsed_sec"]
+            "accuracy": round(best_acc, 4),
+            "macro_f1": round(best_f1, 4),
+            "macro_precision": round(prec, 4),
+            "macro_recall": round(rec, 4),
+            "elapsed_sec": round(hist["elapsed_sec"], 2)
         })
-        print(f"Fold {fold} Result: Val Acc = {best_acc*100:.2f}% | Macro F1 = {best_f1*100:.2f}% ({hist['elapsed_sec']:.1f}s)")
+        print(f"Fold {fold} Result: Val Acc = {best_acc*100:.2f}% | Macro F1 = {best_f1*100:.2f}% | Prec = {prec*100:.2f}% | Rec = {rec*100:.2f}% ({hist['elapsed_sec']:.1f}s)")
 
     total_time = time.time() - t_start
-    overall_metrics = compute_metrics(y_raw, oof_predictions)
-    df_folds = format_cv_summary_table(fold_metrics)
 
-    mean_acc = df_folds["Accuracy (%)"].mean()
-    std_acc = df_folds["Accuracy (%)"].std()
-    mean_f1 = df_folds["Macro F1 (%)"].mean()
+    # 1. Hardware efficiency profiling
+    print("\n[Hardware Profiling] Profiling DayViT inference and compute footprint...")
+    efficiency_profile = profile_model_efficiency(
+        model=sample_model if sample_model is not None else build_model("dayvit"),
+        sample_input=torch.randn(1, 7, 24),
+        device=device
+    )
 
-    print("\n" + "=" * 50)
-    print("              5-FOLD CV SUMMARY: DayViT")
-    print("=" * 50)
-    print(df_folds.to_string(index=False))
-    print("-" * 50)
-    print(f"Mean Accuracy : {mean_acc:.2f}% ± {std_acc:.2f}%")
-    print(f"Mean Macro F1 : {mean_f1:.2f}%")
-    print(f"Overall OOF Acc: {overall_metrics['accuracy']*100:.2f}%")
-    print(f"Total Time    : {total_time:.2f}s")
-    print("=" * 50)
+    # 2. Comprehensive multi-metric calculation
+    cv_dist = compute_cross_validation_distribution(fold_metrics)
+    overall_metrics = compute_comprehensive_metrics(y_raw, oof_predictions, oof_probabilities)
 
-    # Save artifacts to outputs/dayvit
-    df_folds.to_csv(OUTPUT_DIR / "cv_5fold_summary.csv", index=False)
-    with open(OUTPUT_DIR / "metrics_overall.json", "w") as f:
-        json.dump(overall_metrics, f, indent=2)
+    # 3. Build ALL-IN-ONE single JSON report
+    single_json_report = build_single_json_report(
+        model_name="DayViT (Ours)",
+        cv_dist=cv_dist,
+        overall_metrics=overall_metrics,
+        efficiency_profile=efficiency_profile,
+        total_time_sec=total_time
+    )
 
+    # 4. Save to SINGLE JSON file
+    out_json_path = OUTPUT_DIR / "benchmark_results.json"
+    with open(out_json_path, "w", encoding="utf-8") as f:
+        json.dump(single_json_report, f, indent=2)
+
+    # 5. Confusion matrix plot
     plot_confusion_matrix(
         overall_metrics["confusion_matrix"],
         OUTPUT_DIR / "confusion_matrix_oof_dayvit.png",
         title="DayViT OOF Confusion Matrix (5-Fold CV)"
     )
 
-    return {
-        "model": "DayViT",
-        "mean_acc": mean_acc,
-        "std_acc": std_acc,
-        "mean_f1": mean_f1,
-        "fold_accs": df_folds["Accuracy (%)"].tolist(),
-        "params": 58804,
-        "total_time": total_time
-    }
+    # 6. Display executive summary card
+    print("\n" + "=" * 65)
+    print("        ALL-IN-ONE BENCHMARK RESULTS: DayViT (Ours)")
+    print("=" * 65)
+    for k, v in single_json_report["summary_card"].items():
+        print(f"  {k:30s}: {v}")
+    print("=" * 65)
+    print(f"Single JSON Report saved to: {out_json_path}")
+
+    return single_json_report
 
 
 if __name__ == "__main__":
