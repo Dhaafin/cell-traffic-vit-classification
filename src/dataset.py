@@ -28,10 +28,34 @@ LABEL_MAP: Dict[str, int] = {"UU": 0, "UD": 1, "CU": 2, "CD": 3}
 INV_LABEL_MAP: Dict[int, str] = {v: k for k, v in LABEL_MAP.items()}
 
 
+def _impute_sample_intra_week(mat_7x24: np.ndarray) -> np.ndarray:
+    """
+    Imputes NaN entries strictly within a single 7x24 sample matrix using
+    the valid mean of the same diurnal hour across remaining days of that week.
+    Falls back to the sample's overall mean (or 0.0) if an entire hour is NaN.
+    Guarantees 0% train/val fold leakage and 0% class/label leakage.
+    """
+    if not np.isnan(mat_7x24).any():
+        return mat_7x24
+
+    filled = mat_7x24.copy()
+    sample_mean = float(np.nanmean(filled)) if np.any(~np.isnan(filled)) else 0.0
+
+    for hour in range(filled.shape[1]):
+        col = filled[:, hour]
+        nan_mask = np.isnan(col)
+        if nan_mask.any():
+            valid_vals = col[~nan_mask]
+            fill_val = float(np.mean(valid_vals)) if valid_vals.size > 0 else sample_mean
+            filled[nan_mask, hour] = fill_val
+
+    return filled
+
+
 def load_raw_traffic_matrices(data_dir: Optional[Path] = None) -> Tuple[np.ndarray, np.ndarray, List[str]]:
     """
     Reads 4 Excel files containing 7x24 weekly throughput matrices,
-    applies hourly-mean imputation per class to handle missing values,
+    applies zero-leakage intra-sample hourly-mean imputation to handle missing values,
     and returns:
       - X: np.ndarray of shape (1140, 7, 24)
       - y: np.ndarray of shape (1140,)
@@ -54,17 +78,10 @@ def load_raw_traffic_matrices(data_dir: Optional[Path] = None) -> Tuple[np.ndarr
         ids = df["ID"].values
         pixels_df = df.loc[:, "R0C0":"R6C23"].copy()
 
-        # Impute missing entries via hourly-mean across available days
-        for hour in range(24):
-            hour_cols = [f"R{day}C{hour}" for day in range(7) if f"R{day}C{hour}" in pixels_df.columns]
-            hour_vals = pixels_df[hour_cols].values.flatten()
-            valid_mean = float(np.nanmean(hour_vals)) if np.any(~np.isnan(hour_vals)) else 0.0
-            pixels_df[hour_cols] = pixels_df[hour_cols].fillna(valid_mean)
-
         mat_data = pixels_df.values.astype(np.float32)  # (N, 168)
 
         for img_id, row in zip(ids, mat_data):
-            img_7x24 = row.reshape(7, 24)
+            img_7x24 = _impute_sample_intra_week(row.reshape(7, 24))
             X_list.append(img_7x24)
             y_list.append(LABEL_MAP[class_name])
             id_list.append(str(img_id))
