@@ -99,7 +99,12 @@ def train_lpft(
             p.requires_grad = True
         for p in model.vit.layernorm.parameters():
             p.requires_grad = True
-        for block in model.vit.encoder.layer[-unfreeze_last_n:]:
+        encoder_layers = (
+            model.vit.layers
+            if hasattr(model.vit, "layers")
+            else model.vit.encoder.layer
+        )
+        for block in encoder_layers[-unfreeze_last_n:]:
             for p in block.parameters():
                 p.requires_grad = True
 
