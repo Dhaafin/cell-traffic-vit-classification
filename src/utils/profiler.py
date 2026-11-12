@@ -6,6 +6,7 @@ Measures:
 3. Inference Latency (ms/sample) and Throughput (samples/sec) with warm-up.
 4. Parameter footprint (trainable vs total).
 """
+import gc
 import time
 from typing import Dict, Any, Tuple
 import torch
@@ -40,9 +41,8 @@ def profile_model_efficiency(
     Returns:
         Dict containing parameter counts, FLOPs, latency, throughput, and peak VRAM.
     """
-    model.eval()
-    model = model.to(device)
-    sample_input = sample_input.to(device)
+    model = model.to("cpu").eval()
+    sample_input = sample_input.to("cpu")
 
     # 1. Parameter counts
     total_params = sum(p.numel() for p in model.parameters())
@@ -50,23 +50,26 @@ def profile_model_efficiency(
 
     # 2. FLOPs counting via PyTorch native FlopCounterMode
     try:
-        # Clone sample on CPU for reliable flop tracing
-        cpu_model = model.to("cpu").eval()
-        cpu_input = sample_input.to("cpu")
         with torch.no_grad():
             with FlopCounterMode(display=False) as flop_counter:
-                cpu_model(cpu_input)
+                model(sample_input)
             total_flops = int(flop_counter.get_total_flops())
-    except Exception as e:
+    except Exception:
         total_flops = 0
-    finally:
-        model.to(device)
-        sample_input = sample_input.to(device)
 
-    # 3. Peak VRAM & Inference Latency Measurement
+    # 3. Total Peak VRAM (Model Weights + Inference Activations) & Latency
+    baseline_alloc = 0
     if device.type == "cuda":
-        torch.cuda.reset_peak_memory_stats(device)
+        # Trigger lazy CUDA/cuBLAS workspace init before setting baseline
+        _ = torch.zeros((1, 1), device=device) @ torch.zeros((1, 1), device=device)
+        gc.collect()
         torch.cuda.empty_cache()
+        torch.cuda.synchronize(device)
+        baseline_alloc = torch.cuda.memory_allocated(device)
+        torch.cuda.reset_peak_memory_stats(device)
+
+    model = model.to(device)
+    sample_input = sample_input.to(device)
 
     # Warm-up phase
     with torch.no_grad():
@@ -93,7 +96,8 @@ def profile_model_efficiency(
 
     peak_vram_mb = 0.0
     if device.type == "cuda":
-        peak_vram_mb = round(torch.cuda.max_memory_allocated(device) / (1024 * 1024), 2)
+        net_peak_bytes = max(0, torch.cuda.max_memory_allocated(device) - baseline_alloc)
+        peak_vram_mb = round(net_peak_bytes / (1024 * 1024), 2)
 
     return {
         "total_parameters": total_params,
