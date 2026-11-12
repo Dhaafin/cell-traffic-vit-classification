@@ -108,7 +108,11 @@ class ViTTiny(nn.Module):
             for p in self.vit.vit.layernorm.parameters():
                 p.requires_grad = True
 
-            encoder_layers = self.vit.vit.encoder.layer
+            encoder_layers = (
+                self.vit.vit.layers
+                if hasattr(self.vit.vit, "layers")
+                else self.vit.vit.encoder.layer
+            )
             total_blocks = len(encoder_layers)
             start_idx = max(0, total_blocks - unfreeze_last_n)
             for i in range(start_idx, total_blocks):
